@@ -9,13 +9,19 @@ from nltk.inference.discourse import DrtGlueReadingCommand, DiscourseTester
 from nltk.corpus import wordnet as wn
 
 DEBUG = True
-DEBUG = False
+# DEBUG = False
 pp = pprint.PrettyPrinter(indent=4)
 
-test = [
+test1 = [
     'Tim has 8 hamsters.',
     '3 of them are brown.',
-    'How many of his hamsters are not brown?']
+    'How many of his hamsters are not brown?'] # frame: has~his
+# x+y=100 a+b=6 x=4a y=5b
+test2 = [
+    'Winson spent $180 to buy a total of 20 apples and bananas.',
+    'Each apple cost $5 and each banana cost $15.',
+    'How many apples did Winson buy?']
+# buy, spend, cost, pay, price
 
 # hack for subprocess.DEVNULL on python 2.7
 try:
@@ -39,8 +45,11 @@ stemmer = WordNetLemmatizer()
 # size(set) :- size(some super set), size(complement set wrt the super set)
 # complement set :- set(not attr)
 
+# METAPHYSICS KNOWLEDGE / PROBLEM SOLVING KB!!!
+#  eg: part-whole, rate, different plans and invariant, keywords such as each.
+# also need PHYSICS/DOMAIN KNOWLEDGE
+#  eg: buy-sell, travel, produce-consume
 # target: condition action subtargets
-# x+y=100 a+b=6 x=4a y=5b
 kb = {
     'solve(node attr)': [
         ['eq(attr NUMBER)', 'makeVar(node NUMBER var)', 'solveNodeNumber(node var)']
@@ -58,6 +67,8 @@ kb = {
          'makeEquation(SUM var var1 var2)',
          'solveNodeNumber(whole var2)',
          'solveNodeNumber(complement var1)'
+        ],
+        [''
         ]
     ]
     , 'solveComplement(node pred whole complement)': [
@@ -70,6 +81,10 @@ kb = {
     ]
 }
 
+lex = {
+    
+}
+
 def op_get(frame, params):
     node, attr, ret = frame.get(params[0]), frame.get(params[1]), params[2]
     value = node.get(attr)
@@ -79,7 +94,7 @@ def op_get(frame, params):
     return True
 
 def op_makeVar(frame, params):
-    frame[params[2]] = 'var'
+    frame[params[2]] = params[2]
     return True
 
 def op_resolveVar(frame, params):
@@ -118,7 +133,7 @@ def solve(model, node, attr):
         return name, params[:-1].split() # remove ')'
 
     def call(name, frame, params):
-        print 'call', name
+        # print 'call', name
         # first try kb
         for head, body in kb.items():
             headName, callParams = parse(head)
@@ -132,7 +147,7 @@ def solve(model, node, attr):
                         outParamOffset = i
                         break
                 for clause in body:
-                    print 'try', clause
+                    # print 'try', clause
                     success = True
                     callFrameCopy = callFrame.copy()
                     for action in clause:
@@ -360,7 +375,7 @@ def findX(sentenceNo, tree, model):
     if tag not in ('WDT', 'WP', 'WP$', 'WRB'):
         raise Exception('Interrogative must be the first word in a query')
 
-    if word == 'how':
+    if word == 'How':
         headNode = getLink(tree, node, 'head')
         if headNode is not None:
             headTag = headNode['tag']
@@ -382,11 +397,13 @@ def findX(sentenceNo, tree, model):
     
     return cnode, attr
 
-for sentNo, sent in enumerate(test):
+for sentNo, sent in enumerate(test1):
     words = nltk.word_tokenize(sent)
-    words = [word.lower() for word in words if word.isalnum()]
+    words = [word for word in words if word.isalnum()]
     parse = parser.parse_sents([words]).next().next()
-    print parse.tree()
+    pp.pprint(sent)
+    if DEBUG:
+        pp.pprint(parse.tree())
     
     # walk the tree
     walkTree(sentNo, parse, model)
@@ -399,7 +416,8 @@ for sentNo, sent in enumerate(test):
     if sent.endswith('?'):
         # run query
         xNode, attr = findX(sentNo, parse, model)
-        pp.pprint((xNode, attr))
+        if DEBUG:
+            pp.pprint((xNode, attr))
         pp.pprint(solve(model, xNode, attr))
     else:
         # update kb
