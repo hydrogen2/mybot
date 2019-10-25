@@ -13,14 +13,16 @@ DEBUG = True
 pp = pprint.PrettyPrinter(indent=4)
 
 test1 = [
-    'Tim has 8 hamsters.',
-    '3 of them are brown.',
-    'How many of his hamsters are not brown?'] # frame: has~his
+    'Tim has 8 hamsters.'
+    ,'3 of them are brown.'
+    ,'How many of his hamsters are not brown?'
+    ] # frame: has~his
 # x+y=100 a+b=6 x=4a y=5b
 test2 = [
-    'Winson spent $180 to buy a total of 20 apples and bananas.',
-    'Each apple cost $5 and each banana cost $15.',
-    'How many apples did Winson buy?']
+    'Winson spent $180 to buy a total of 20 apples and bananas.'
+    ,'Each apple cost $5 and each banana cost $15.'
+    ,'How many apples did Winson buy?'
+    ]
 # buy, spend, cost, pay, price
 
 # hack for subprocess.DEVNULL on python 2.7
@@ -67,8 +69,6 @@ kb = {
          'makeEquation(SUM var var1 var2)',
          'solveNodeNumber(whole var2)',
          'solveNodeNumber(complement var1)'
-        ],
-        [''
         ]
     ]
     , 'solveComplement(node pred whole complement)': [
@@ -81,8 +81,25 @@ kb = {
     ]
 }
 
-lex = {
-    
+frames = {
+    'has': {
+        'Possession': {
+            'Owner': 'dep:nsubj',
+            'Possession': 'dep:dobj'
+        }
+    },
+    'of': {
+        'Be_subset_of': {
+            'Part': 'head', #TODO: add conditional: tag == CD
+            'Total': 'dep:pobj'
+        }
+    },
+    'brown': {
+        'Color': { #TODO: add conditional: tag == JJ && cop
+            'Color': 'self',
+            'Entity': 'dep:nsubj'
+        }
+    }
 }
 
 def op_get(frame, params):
@@ -200,12 +217,13 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
     def compareNouns(noun1, noun2):
         return stemmer.lemmatize(noun1) == stemmer.lemmatize(noun2)
 
-    def findPoss(cnode, poss):
-        # todo: refine
-        has = cnode.get('has')
-        if has is None or has.get('obj') is not cnode:
+    def findOwner(cnode, poss):
+        try:
+            frames = cnode['Possession']['Possession']
+        except:
             return None
-        return has.get('subj')
+        # todo: find the owner that agrees with poss
+        return frames[0]['Owner']
 
     def compareNumbers(number1, number2):
         # todo: refine
@@ -216,7 +234,7 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
     for sentNo in reversed(range(sent)): # should be sent+1, hack for now!
         for _, cnode in model['nodes'][sentNo].items():
             if noun is not None and compareNouns(cnode['word'], noun):
-                if poss is None or findPoss(cnode, poss) is not None:
+                if poss is None or findOwner(cnode, poss) is not None:
                     # pp.pprint(cnode)
                     return cnode
             if number is not None and compareNumbers(cnode.get('number'), number):
@@ -225,14 +243,18 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
 
     return None
 
-def getLink(tree, node, link, dep=None):
-    if link == 'deps':
+def getLink(tree, node, link):
+    if link == 'self':
+        return node
+    
+    if link.startswith('dep:'):
+        dep = link[4:]
         target = node['deps'][dep][0] if dep in node['deps'] else None
     else:
         target = node[link]
     return tree.get_by_address(target) if target is not None else None
 
-# transform and update the speech tree into the concept graph
+# transform and update the parse into the concept graph
 def walkTree(sentenceNo, tree, model):
     def inferNumber(node):
         word = node['word']
@@ -243,11 +265,11 @@ def walkTree(sentenceNo, tree, model):
         if node['tag'] == 'CD':
             return word
 
-        numNode = getLink(tree, node, 'deps', 'num')
+        numNode = getLink(tree, node, 'dep:num')
         if numNode is not None:
             return numNode['word']
 
-        detNode = getLink(tree, node, 'deps', 'det')
+        detNode = getLink(tree, node, 'dep:det')
         if detNode is not None and detNode['word'] in ('a', 'an'):
             return '1'
         
@@ -261,20 +283,20 @@ def walkTree(sentenceNo, tree, model):
         address, word, tag = node['address'], node['word'], node['tag']
         if tag == 'PRP':
             return findCNode(model, sentenceNo, number=inferNumber(node))
-        elif getLink(tree, node, 'deps', 'det') is not None:
+        elif getLink(tree, node, 'dep:det') is not None:
             pass
-        elif getLink(tree, node, 'deps', 'poss') is not None:
-            possNode = getLink(tree, node, 'deps', 'poss')
+        elif getLink(tree, node, 'dep:poss') is not None:
+            possNode = getLink(tree, node, 'dep:poss')
             return findCNode(model, sentenceNo, noun=word, poss=possNode['word'])
         else:
             pass
         return cnode
 
     def createCNode(node):
-        # todo: lookup word
-        # todo: correct tag
+        # decide whether to create a cnode for this node based on word, tag and rel
+        # look up word and infer props
         cnode = None
-        address, word, tag = node['address'], node['word'], node['tag']
+        address, word, tag, rel = node['address'], node['word'], node['tag'], node['rel']
         if tag in ('NN', 'NNS', 'NNP', 'NNPS', 'PRP'):
             # check if it's an existing ref
             cnode = resolveRef(node)
@@ -284,17 +306,15 @@ def walkTree(sentenceNo, tree, model):
                 else:
                     cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
                         'word': word, 'number': inferNumber(node)}
-        elif tag in ('VBP', 'VBZ'):
+        elif word in frames: # for verbs and predicates
             cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
                 'word': word}
-        elif tag in ('CD') or word == 'many':
-            ofNode = getLink(tree, node, 'deps', 'prep')
-            if ofNode is not None and ofNode['word'] == 'of': # for now treat 'of sth' solely as part-whole
-                cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                    'word': word, 'number': inferNumber(node)}
-        elif tag in ('JJ'):
+        elif rel == 'cop': # for cops we need them for the frame CNode
             cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                'word': word}
+                'word': word}    
+        elif rel in ('nsubj',): # for non nouns like 3 or many in the subj position
+            cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
+                'word': word, 'number': inferNumber(node)}
         else:
             pass
         
@@ -304,54 +324,26 @@ def walkTree(sentenceNo, tree, model):
             model['nodes'][sentenceNo][address] = cnode
 
     def linkCNodes(node):
-        word, tag = node['word'], node['tag']
-
-        if tag in ('VBP', 'VBZ'):
-
-            cnode = getCNode(model, sentenceNo, node['address'])
+        address, word, tag = node['address'], node['word'], node['tag']
+        if word in frames:
+            frame, roles = frames[word].iteritems().next() #TODO: WSD! now hardcode to first sense
             
-            if node['rel'] == 'cop':
-                predNode = getLink(tree, node, 'head')
-
-                subj = getLink(tree, predNode, 'deps', 'nsubj')
-                if subj is not None:
-                    subjc = getCNode(model, sentenceNo, subj['address'])
-                    cnode['subj'] = subjc
-                    subjc[word] = cnode
+            cop = getLink(tree, node, 'dep:cop')
+            frameCNode = getCNode(model, sentenceNo, cop['address'] if cop is not None else address)
+            
+            for roleName, roleExpr in roles.iteritems():
+                # TODO: parse and evaluate roleExpr
+                roleNode = getLink(tree, node, roleExpr)
+                roleCNode = getCNode(model, sentenceNo, roleNode['address'])
                 
-                predc = getCNode(model, sentenceNo, predNode['address'])
-                cnode['pred'] = predc
-                predc[word] = cnode
+                frameCNode['frame'] = frame
+                frameCNode[roleName] = roleCNode
 
-                neg = getLink(tree, predNode, 'deps', 'neg')
-                if neg is not None:
-                    cnode['neg'] = neg['word']
-
-            else:
-                subj = getLink(tree, node, 'deps', 'nsubj')
-                if subj is not None:
-                    subjc = getCNode(model, sentenceNo, subj['address'])
-                    cnode['subj'] = subjc
-                    subjc[word] = cnode
-
-                obj = getLink(tree, node, 'deps', 'dobj')
-                if obj is not None:
-                    objc = getCNode(model, sentenceNo, obj['address'])
-                    cnode['obj'] = objc
-                    objc[word] = cnode
-
-        elif tag in ('IN'):
-            if word == 'of' and getLink(tree, node, 'deps', 'pobj') is not None:
-                sub = getLink(tree, node, 'head')
-                subc = getCNode(model, sentenceNo, sub['address'])
-
-                _super = getLink(tree, node, 'deps', 'pobj')
-                superc = getCNode(model, sentenceNo, _super['address'])
-
-                subc['whole'] = superc
-                if 'parts' not in superc:
-                    superc['parts'] = []
-                superc['parts'].append(subc)
+                if frame not in roleCNode:
+                    roleCNode[frame] = {}
+                if roleName not in roleCNode[frame]:
+                    roleCNode[frame][roleName] = []
+                roleCNode[frame][roleName].append(frameCNode)
 
     def walkTreeRecursive(i):
         node = tree.get_by_address(i)
@@ -388,7 +380,7 @@ def findX(sentenceNo, tree, model):
                     else: # assume many is already made a cnode
                         cnode, attr = getCNode(model, sentenceNo, headNode['address']), 'number'
                 else:
-                    pass
+                    pass # JJs other than many 
             elif headTag == 'VB':
                 pass
     elif word == 'what':
