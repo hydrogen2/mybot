@@ -4,6 +4,7 @@ import pprint
 import nltk
 from nltk.tag import StanfordPOSTagger
 from nltk.parse.malt import MaltParser
+from nltk.parse.dependencygraph import DependencyGraph
 from nltk.stem import WordNetLemmatizer
 from nltk.inference.discourse import DrtGlueReadingCommand, DiscourseTester
 from nltk.corpus import wordnet as wn
@@ -14,17 +15,23 @@ pp = pprint.PrettyPrinter(indent=4)
 
 test1 = [
     'Tim has 8 hamsters.'
-    ,'3 of them are brown.'
-    ,'How many of his hamsters are not brown?'
+    , '3 of them are brown.'
+    , 'How many of his hamsters are not brown?'
     ] # frame: has~his
 # x+y=100 a+b=6 x=4a y=5b
 test2 = [
-    'Winson spent $180 to buy a total of 20 apples and bananas.'
-    ,'Each apple cost $5 and each banana cost $15.'
-    ,'How many apples did Winson buy?'
+    'Winson spent $180 to buy a total of 20 pears and bananas.'
+    # , 'Each pear cost 5 dollars and each banana cost 6 dollars.'
+    # , 'How many pears did Winson buy?'
     ]
+# Winson spent $180 to buy (a total of 20) (pears and bananas).
 # buy, spend, cost, pay, price
-
+test3 = [
+    'Angela bought apples and bananas at the fruit stand.'
+    , 'She bought 20 pieces of fruit and spent $11.50.'
+    , 'Apples cost $.50 and bananas cost $.75 each.'
+    , 'How many of each did she buy?'
+    ]
 # hack for subprocess.DEVNULL on python 2.7
 try:
     from subprocess import DEVNULL # py3k
@@ -36,22 +43,9 @@ except ImportError:
 os.environ['STANFORD_MODELS'] = 'libs/stanford-postagger-2018-10-16/models'
 
 tagger = StanfordPOSTagger('english-bidirectional-distsim.tagger', 'libs/stanford-postagger-2018-10-16/stanford-postagger.jar')
-parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.1', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
+parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.2', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
 stemmer = WordNetLemmatizer()
 
-# size(some set) + size(its complement set wrt the super set) = size(their super set)
-# if an attr is exclusive, then set(attr) and set(not attr) are complement sets
-# color is an exclusive attr
-# more formally: 
-# number(CNode) :- attr(CNode), set(attr), size(set)
-# size(set) :- size(some super set), size(complement set wrt the super set)
-# complement set :- set(not attr)
-
-# METAPHYSICS KNOWLEDGE / PROBLEM SOLVING KB!!!
-#  eg: part-whole, rate, different plans and invariant, keywords such as each.
-# also need PHYSICS/DOMAIN KNOWLEDGE
-#  eg: buy-sell, travel, produce-consume
-# target: condition action subtargets
 kb = {
     'solve(node attr)': [
         ['eq(attr NUMBER)', 'makeVar(node NUMBER var)', 'solveNodeNumber(node var)']
@@ -89,15 +83,59 @@ frames = {
         }
     },
     'of': {
-        'Be_subset_of': {
-            'Part': 'head', #TODO: add conditional: tag == CD
+        'Be_subset_of': { # expressing the relationship between a part and a whole.
+            'Part': 'head', #TODO: conditional: tag == CD
             'Total': 'dep:pobj'
+        }
+        , 'Scale_has_value': { # expressing the relationship between a scale or measure and a value.
+            'Scale': 'head',
+            'Value': 'dep:pobj'
         }
     },
     'brown': {
-        'Color': { #TODO: add conditional: tag == JJ && cop
+        'Color': { #TODO: conditional: tag == JJ && cop
             'Color': 'self',
             'Entity': 'dep:nsubj'
+        }
+    },
+    'spent': {
+        'Commerce_pay': {
+            'Buyer': 'dep:nsubj',
+            'Money': 'dep:dobj'
+        }
+    },
+    'to': {
+        'Purpose': { #TODO: conditonal: infinitive present and the verb
+            'Goal': 'head',
+            'Means': 'head.head'
+        }
+    },
+    'buy': {
+        'Commerce_buy': {
+            # 'Buyer': 'dep:nsubj',
+            'Goods': 'dep:dobj'
+        }
+    },
+    'total': {
+        'Amounting_to': { # tag==NN
+            'Numbers': 'head', # rel==modifier
+            # 'Value': 'dep:prep.dep:pobj' #
+        }
+    },
+    'and': {
+        'And': {
+
+        }
+    },
+    'each': {
+        'For_each': {
+            'Group': '' #case DET: resolve(plural(head)); case ADV: head.dep:nsubj
+        }
+    },
+    'cost': {
+        'Expensiveness': {
+            'Asset': 'dep:dobj',
+            'Goods': 'dep:nsubj'
         }
     }
 }
@@ -199,13 +237,6 @@ def solve(model, node, attr):
 
     call('solve', {'node': node, 'attr': attr}, ['node', 'attr'])
 
-# concept graph (model):
-# notional words as nodes, functional words are collapsed
-# nodes have (predefined) atomic attributes (e.g. types and numbers) and expected slots (e.g. subject and object)
-# blur line between nodes and attributes
-# edges are bidir to support association
-# nodes are indexed to facilitate search
-# 
 model = {
     'nodes': {}
 }
@@ -219,7 +250,7 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
 
     def findOwner(cnode, poss):
         try:
-            frames = cnode['Possession']['Possession']
+            frames = cnode['Possession:Possession']
         except:
             return None
         # todo: find the owner that agrees with poss
@@ -244,15 +275,20 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
     return None
 
 def getLink(tree, node, link):
-    if link == 'self':
-        return node
-    
-    if link.startswith('dep:'):
-        dep = link[4:]
-        target = node['deps'][dep][0] if dep in node['deps'] else None
-    else:
-        target = node[link]
-    return tree.get_by_address(target) if target is not None else None
+    def getLinkSimple(node, link):
+        if link == 'self':
+            return node
+
+        if link.startswith('dep:'):
+            dep = link[4:]
+            target = node['deps'][dep][0] if dep in node['deps'] else None
+        else:
+            target = node[link]
+        return tree.get_by_address(target) if target is not None else None
+
+    for comp in link.split('.'):
+        node = getLinkSimple(node, comp)
+    return node
 
 # transform and update the parse into the concept graph
 def walkTree(sentenceNo, tree, model):
@@ -306,17 +342,12 @@ def walkTree(sentenceNo, tree, model):
                 else:
                     cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
                         'word': word, 'number': inferNumber(node)}
+        elif rel in ('nsubj', 'dobj', 'pobj'): # for non nouns like 3 or many in the subj position
+            cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
+                'word': word, 'number': inferNumber(node)}
         elif word in frames: # for verbs and predicates
             cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
                 'word': word}
-        elif rel == 'cop': # for cops we need them for the frame CNode
-            cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                'word': word}    
-        elif rel in ('nsubj',): # for non nouns like 3 or many in the subj position
-            cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                'word': word, 'number': inferNumber(node)}
-        else:
-            pass
         
         if cnode is not None:
             if sentenceNo not in model['nodes']:
@@ -326,10 +357,8 @@ def walkTree(sentenceNo, tree, model):
     def linkCNodes(node):
         address, word, tag = node['address'], node['word'], node['tag']
         if word in frames:
-            frame, roles = frames[word].iteritems().next() #TODO: WSD! now hardcode to first sense
-            
-            cop = getLink(tree, node, 'dep:cop')
-            frameCNode = getCNode(model, sentenceNo, cop['address'] if cop is not None else address)
+            frame, roles = frames[word].iteritems().next() #TODO: WSD! now hardcode to sense0
+            frameCNode = getCNode(model, sentenceNo, address)
             
             for roleName, roleExpr in roles.iteritems():
                 # TODO: parse and evaluate roleExpr
@@ -339,11 +368,10 @@ def walkTree(sentenceNo, tree, model):
                 frameCNode['frame'] = frame
                 frameCNode[roleName] = roleCNode
 
-                if frame not in roleCNode:
-                    roleCNode[frame] = {}
-                if roleName not in roleCNode[frame]:
-                    roleCNode[frame][roleName] = []
-                roleCNode[frame][roleName].append(frameCNode)
+                frameRole = frame+':'+roleName
+                if frameRole not in roleCNode:
+                    roleCNode[frameRole] = []
+                roleCNode[frameRole].append(frameCNode)
 
     def walkTreeRecursive(i):
         node = tree.get_by_address(i)
@@ -389,28 +417,70 @@ def findX(sentenceNo, tree, model):
     
     return cnode, attr
 
-for sentNo, sent in enumerate(test1):
-    words = nltk.word_tokenize(sent)
-    words = [word for word in words if word.isalnum()]
-    parse = parser.parse_sents([words]).next().next()
-    pp.pprint(sent)
-    if DEBUG:
-        pp.pprint(parse.tree())
-    
-    # walk the tree
-    walkTree(sentNo, parse, model)
+def demo(test):
+    # install the hack
+    def parseFunc(parser, sents):
+        def fixDGForTest2_0(dg):
+            pprint.pprint(dg.tree())
+            buy = dg.get_by_address(5)
+            pears = dg.get_by_address(10)
+            total = dg.get_by_address(7)
+            of = dg.get_by_address(8)
+            num = dg.get_by_address(9)
+            buy['deps']['dobj'][0] = pears['address']
+            pears['rel'] = 'dobj'
+            pears['head'] = buy['address']
+            total['head'] = pears['address']
+            pears['deps']['nmod'] = [total['address']]
+            total['rel'] = 'nmod'
+            pears['deps'].pop('num', None)
+            of['deps']['pobj'][0] = num['address']
+            num['rel'] = 'pobj'
+            num['head'] = of['address']
+            return dg
+        
+        sentParses = parser.parse_sents(sents)
+        
+        if str(sents) == str(massageSent(test2[0])):
+            dg = sentParses.next().next()
+            return (p for p in [[fixDGForTest2_0(dg)]])
+        
+        return sentParses
 
-    # ask clarifying questions
-    # validate sent
-    
-    # transform to model
+    def massageSent(sent):
+        sents = [sent]
+        sents = map(lambda s: nltk.word_tokenize(s), sents)
+        sents = map(lambda s: filter(lambda w: w.isalnum(), s), sents)
+        return sents
 
-    if sent.endswith('?'):
-        # run query
-        xNode, attr = findX(sentNo, parse, model)
+    for sentNo, sent in enumerate(test):
+        pp.pprint(sent)
+        sents = massageSent(sent)
+        parses = parseFunc(parser, sents).next()
+        parses = list(parses)
+        parse = parses[0]
         if DEBUG:
-            pp.pprint((xNode, attr))
-        pp.pprint(solve(model, xNode, attr))
-    else:
-        # update kb
-        pass
+            pp.pprint((len(parses), 'parses'))
+            pp.pprint(parse.tree())
+        
+        # walk the tree
+        walkTree(sentNo, parse, model)
+        if DEBUG:
+            pp.pprint(getCNode(model, 0, 1))
+
+        # ask clarifying questions
+        # validate sent
+        
+        # transform to model
+
+        if sent.endswith('?'):
+            # run query
+            xNode, attr = findX(sentNo, parse, model)
+            if DEBUG:
+                pp.pprint((xNode, attr))
+            pp.pprint(solve(model, xNode, attr))
+        else:
+            # update kb
+            pass
+
+demo(test2)
