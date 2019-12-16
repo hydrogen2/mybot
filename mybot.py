@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import os
 from itertools import chain
 import pprint
@@ -43,7 +45,7 @@ except ImportError:
 os.environ['STANFORD_MODELS'] = 'libs/stanford-postagger-2018-10-16/models'
 
 tagger = StanfordPOSTagger('english-bidirectional-distsim.tagger', 'libs/stanford-postagger-2018-10-16/stanford-postagger.jar')
-parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.2', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
+parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.1', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
 stemmer = WordNetLemmatizer()
 
 kb = {
@@ -75,6 +77,15 @@ kb = {
     ]
 }
 
+def wsd_of(tree, node):
+    head, pobj = getLink(tree, node, 'head'), getLink(tree, node, 'dep:pobj')
+    if head['tag'] == 'CD': # 3 of them
+        return 'Be_subset_of'
+    elif pobj['tag'] == 'CD': # a total of 20
+        return 'Scale_value'
+    else:
+        return 'Entity_association'
+
 frames = {
     'has': {
         'Possession': {
@@ -87,9 +98,13 @@ frames = {
             'Part': 'head', #TODO: conditional: tag == CD
             'Total': 'dep:pobj'
         }
-        , 'Scale_has_value': { # expressing the relationship between a scale or measure and a value.
+        , 'Scale_value': { # expressing the relationship between a scale or measure and a value.
             'Scale': 'head',
             'Value': 'dep:pobj'
+        }
+        , 'Entity_association': {
+            'Entity': 'head',
+            'Association': 'dep:pobj'
         }
     },
     'brown': {
@@ -357,7 +372,12 @@ def walkTree(sentenceNo, tree, model):
     def linkCNodes(node):
         address, word, tag = node['address'], node['word'], node['tag']
         if word in frames:
-            frame, roles = frames[word].iteritems().next() #TODO: WSD! now hardcode to sense0
+            wsd = globals().get('wsd_'+word)
+            if wsd is not None:
+                frame = wsd(tree, node)
+                roles = frames[word][frame]
+            else:
+                frame, roles = frames[word].iteritems().next()
             frameCNode = getCNode(model, sentenceNo, address)
             
             for roleName, roleExpr in roles.iteritems():
