@@ -137,13 +137,14 @@ frames = {
             # 'Value': 'dep:prep.dep:pobj' #
         }
     },
-    'and': {
+    'and': { # https://universaldependencies.org/u/dep/conj.html
         'And': {
-
+            'First': 'head',
+            'Conj': 'head.dep:conj'
         }
     },
     'each': {
-        'For_each': {
+        'Each': {
             'Group': '' #case DET: resolve(plural(head)); case ADV: head.dep:nsubj
         }
     },
@@ -393,18 +394,18 @@ def walkTree(sentenceNo, tree, model):
                     roleCNode[frameRole] = []
                 roleCNode[frameRole].append(frameCNode)
 
-    def walkTreeRecursive(i):
+    def walkTreeRecursive(i, f):
         node = tree.get_by_address(i)
         if DEBUG:
             pp.pprint(node)
-        createCNode(node)
+        f(node)
         deps = sorted(chain.from_iterable(node['deps'].values()))
         if deps:
             for dep in deps:
-                walkTreeRecursive(dep)
-        linkCNodes(node)
+                walkTreeRecursive(dep, f)
         
-    walkTreeRecursive(0)
+    walkTreeRecursive(0, createCNode)
+    walkTreeRecursive(0, linkCNodes)
 
 def findX(sentenceNo, tree, model):
     cnode, attr = None, None
