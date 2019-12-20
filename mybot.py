@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/bin/python
 
 import os
 from itertools import chain
@@ -10,6 +10,10 @@ from nltk.parse.dependencygraph import DependencyGraph
 from nltk.stem import WordNetLemmatizer
 from nltk.inference.discourse import DrtGlueReadingCommand, DiscourseTester
 from nltk.corpus import wordnet as wn
+
+os.environ['DYLD_FALLBACK_LIBRARY_PATH'] = '/usr/local/Cellar/swi-prolog/8.0.2_1/libexec/lib/swipl/lib/x86_64-darwin/'
+from pyswip import Prolog
+from pyswip import Prolog, registerForeign
 
 DEBUG = True
 # DEBUG = False
@@ -48,38 +52,9 @@ tagger = StanfordPOSTagger('english-bidirectional-distsim.tagger', 'libs/stanfor
 parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.1', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
 stemmer = WordNetLemmatizer()
 
-kb = {
-    'solve(node attr)': [
-        ['eq(attr NUMBER)', 'makeVar(node NUMBER var)', 'solveNodeNumber(node var)']
-    ]
-    , 'solveNodeNumber(node var)': [
-        ['get(node NUMBER number)', 'makeEquation(EQ var number)'], # known number
-        ['resolveVar(node NUMBER oldvar)', 'makeEquation(EQ var oldvar)'], # known var
-        ['enumNodePred(node pred)', 'solveNodeNumberWithPred(node pred var)']
-    ]
-    , 'solveNodeNumberWithPred(node pred var)': [
-        ['get(node WHOLE whole)',
-         'solveComplement(node pred whole complement)',
-         'makeVar(complement NUMBER var1)',
-         'makeVar(whole NUMBER var2)',
-         'makeEquation(SUM var var1 var2)',
-         'solveNodeNumber(whole var2)',
-         'solveNodeNumber(complement var1)'
-        ]
-    ]
-    , 'solveComplement(node pred whole complement)': [
-        ['isPredExclusive(pred)',
-         'negate(pred negpred)',
-         'getPart(whole negpred complement)']
-    ]
-    , 'isPredExclusive(pred)': [
-        ['eq(pred COLOR)']
-    ]
-}
-
 def wsd_of(tree, node):
     head, pobj = getLink(tree, node, 'head'), getLink(tree, node, 'dep:pobj')
-    if head['tag'] == 'CD': # 3 of them
+    if head['tag'] == 'CD' or head['word'] == 'many': # 3 of them
         return 'Be_subset_of'
     elif pobj['tag'] == 'CD': # a total of 20
         return 'Scale_value'
@@ -111,6 +86,11 @@ frames = {
         'Color': { #TODO: conditional: tag == JJ && cop
             'Color': 'self',
             'Entity': 'dep:nsubj'
+        }
+    },
+    'not': {
+        'Not': {
+            'Pred': 'head'
         }
     },
     'spent': {
@@ -156,6 +136,14 @@ frames = {
     }
 }
 
+def op_findFrame(frame, params):
+    node, f, this, that, ret = frame.get(params[0]), params[1], params[2], params[3], params[4]
+    fs = node.get(f+':'+this)
+    if fs is None:
+        return False
+    frame[ret] = fs[0][that]
+    return True
+
 def op_get(frame, params):
     node, attr, ret = frame.get(params[0]), frame.get(params[1]), params[2]
     value = node.get(attr)
@@ -197,61 +185,10 @@ def op_getPart(frame, params):
     frame[ret] = node.get('parts')[0]
     return True
 
-def solve(model, node, attr):
-    def parse(str):
-        ss = str.split('(')
-        name, params = ss[0], ss[1]
-        return name, params[:-1].split() # remove ')'
+prolog = Prolog()
+prolog.consult('mybot.pl')
 
-    def call(name, frame, params):
-        # print 'call', name
-        # first try kb
-        for head, body in kb.items():
-            headName, callParams = parse(head)
-            if headName == name:
-                callFrame = {}
-                outParamOffset = None
-                for i, callParam in enumerate(callParams):
-                    if params[i] in frame: # in param
-                        callFrame[callParam] = frame[params[i]]
-                    else: # out param
-                        outParamOffset = i
-                        break
-                for clause in body:
-                    # print 'try', clause
-                    success = True
-                    callFrameCopy = callFrame.copy()
-                    for action in clause:
-                        actionName, actionParams = parse(action)
-                        for actionParam in actionParams:
-                            if actionParam.isupper(): # symbol
-                                callFrameCopy[actionParam] = actionParam.lower()
-                        success = call(actionName, callFrameCopy, actionParams)
-                        if not success:
-                            break
-                    if success:
-                        if outParamOffset is not None:
-                            for i in range(outParamOffset, len(callParams)):
-                                frame[params[i]] = callFrameCopy[callParams[i]]
-                        return True
-                return False
-        # then try builtin
-        callFrame = {}
-        outParamOffset = None
-        for i, param in enumerate(params):
-            if param in frame: # in param
-                callFrame[param] = frame[param]
-            else: # out param
-                outParamOffset = i
-                break
-        success = globals()['op_'+name](callFrame, params)
-        if success:
-            if outParamOffset is not None:
-                for i in range(outParamOffset, len(params)):
-                    frame[params[i]] = callFrame[params[i]]
-        return success
-
-    call('solve', {'node': node, 'attr': attr}, ['node', 'attr'])
+registerForeign()
 
 model = {
     'nodes': {}
@@ -496,12 +433,12 @@ def demo(test):
 
         if sent.endswith('?'):
             # run query
-            xNode, attr = findX(sentNo, parse, model)
+            x = findX(sentNo, parse, model)
             if DEBUG:
-                pp.pprint((xNode, attr))
-            pp.pprint(solve(model, xNode, attr))
+                pp.pprint(x)
+            pp.pprint(list(prolog.query('Node=%s, Attr=%s, solve(Node, Attr)' % x)))
         else:
             # update kb
             pass
 
-demo(test2)
+demo(test1)
