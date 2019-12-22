@@ -1,27 +1,27 @@
 % for now assume all answers are number type
 
-% solve an unknown FE in a partial Frame
-solve(Frame, FE) :-
-    quantifiable(Frame, FE), solveForQuant(Frame, Node, FE).
+% solve an unknown FE of a Frame
+solve(F, FE) :-
+    quantifiable(F, FE), solveForQuant(F, FE).
 
-solveForQuant(Frame, Node, FE) :- % known quant
-    call(Frame, F),
+solveForQuant(F, FE) :- % known quant
     call(FE, F, Quant),
-    makeVar(Frame, Node, FE, Var),
+    makeVar(F, FE, Var),
     makeEquation(eq, Var, Quant).
-solveForQuant(Frame, Node, FE) :- % addition
-    partWhole(Node, Whole),
-    pred(Node, Pred),
-    negatePred(Pred, NegPred),
-    partWhole(Complement, Whole),
-    pred(Complement, NegPred),
-    makeVar(Complement, number, Var1),
-    makeVar(Whole, number, Var2),
-    makeEquation(sum, Var, Var1, Var2),
+
+entity(F, E) :-
+    .
+
+solveForQuant(F, FE) :- % addition
+    entity(F, Part),
+    partWhole(Part, Whole),
+    partition(Whole, [Parts]),
+    member(Parts, Part),
+    makeVar(Whole, FE, Var),
+    makeVars(Parts, FE, Vars),
+    makeEquation(sum, Var, Vars),
     solveForQuant(Whole, Var2),
     solveForQuant(Complement, Var1).
-solveForQuant(Node, Var) :-
-
 
 makeVar(_, number, var).
 makeEquation(eq, Var, Number) :- write(Var), write(eq), write(Number).
@@ -54,19 +54,23 @@ negatePred(Pred, NegPred) :-
     predsEqual(Pred, NegPred).
 
 
-number(node1, 8).
-number(node2, 3).
-be_subset_of(frame1).
-total(frame1, node1).
-part(frame1, node2).
-color(frame3).
-colorcolor(frame3, brown).
-colorentity(frame3, node2).
-be_subset_of(frame2).
-total(frame2, node1).
-part(frame2, node3).
-color(frame4).
-colorcolor(frame4, brown).
-colorentity(frame4, node3).
-not(frame5).
-notpred(frame5, frame4).
+f:number(f6).
+f:number.entity(f6, node1)
+f:number.number(f6, 8).
+f:number(f7).
+f:number.entity(f7, node2)
+f:number.number(f7, 3).
+f:part_whole(frame1).
+f:part_whole.whole(frame1, node1).
+f:part_whole.part(frame1, node2).
+f:color(frame3).
+f:color.color(frame3, brown).
+f:color.entity(frame3, node2).
+f:part_whole(frame2).
+f:part_whole.whole(frame2, node1).
+f:part_whole.part(frame2, node3).
+f:color(frame4).
+f:color.color(frame4, brown).
+f:color.entity(frame4, node3).
+f:neg(frame5).
+f:neg.pred(frame5, frame4).
