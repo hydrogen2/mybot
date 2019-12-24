@@ -1,76 +1,72 @@
 % for now assume all answers are number type
 
 % solve an unknown FE of a Frame
-solve(F, FE) :-
-    quantifiable(F, FE), solveForQuant(F, FE).
+solve(FrameName, Entity) :-
+    quantifiable(FrameName), solveQuant(FrameName, Entity).
 
-solveForQuant(F, FE) :- % known quant
-    call(FE, F, Quant),
-    makeVar(F, FE, Var),
-    makeEquation(eq, Var, Quant).
+quantifiable(f:quant).
+addable(f:quant).
 
-entity(F, E) :-
-    .
+solveQuant(FrameName, Entity) :- % known quant
+    call(FrameName, F),
+    f:entity(F, Entity),
+    f:value(F, Val),
+    makeVar(FrameName, Entity, Var),
+    makeEquation(eq, Var, Val).
 
-solveForQuant(F, FE) :- % addition
-    entity(F, Part),
+solveQuant(FrameName, Part) :- % addition
+    addable(FrameName),
     partWhole(Part, Whole),
-    partition(Whole, [Parts]),
-    member(Parts, Part),
-    makeVar(Whole, FE, Var),
-    makeVars(Parts, FE, Vars),
-    makeEquation(sum, Var, Vars),
-    solveForQuant(Whole, Var2),
-    solveForQuant(Complement, Var1).
+    partition(Whole, Parts),
+    member(Part, Parts),
+    maplist(makeVar(FrameName), Parts, Vars),
+    makeVar(FrameName, Whole, Var),
+    makeEquation(sum, Vars, Var),
+    delete(Parts, Part, PartsExcludingThis),
+    maplist(solveQuant(FrameName), PartsExcludingThis),
+    solveQuant(FrameName, Whole).
 
-makeVar(_, number, var).
-makeEquation(eq, Var, Number) :- write(Var), write(eq), write(Number).
-makeEquation(sum, Var, Var1, Var2) :- write(Var), write(plus), write(Var1), write(eq), write(Var2).
+partition(Whole, Parts) :-
+    partWhole(E1, Whole),
+    partWhole(E2, Whole),
+    f:entity(P1, E1),
+    f:entity(P2, E2),
+    negatePred(P1, P2),
+    Parts = [E1, E2].
+
+makeVar(FrameName, Entity, Var) :- write('let '), write(Entity), write('.'), write(FrameName), writeln(' = x.'), Var = Entity.
+makeEquation(eq, Var, Val) :- write(Var), write(' = '), writeln(Val).
+makeEquation(sum, Vars, Var) :- atomic_list_concat(Vars, ' + ', L), write(L), write(' = '), writeln(Var).
 
 partWhole(Part, Whole) :-
-    be_subset_of(Frame),
-    part(Frame, Part),
-    total(Frame, Whole).
+    f:part_whole(F),
+    f:part(F, Part),
+    f:whole(F, Whole).
 
 pred(Node, Pred) :-
-    color(Pred),
-    colorentity(Pred, Node).
+    f:color(Pred),
+    f:entity(Pred, Node).
 
 predsEqual(P1, P2) :-
-    color(P1),
-    color(P2),
-    colorcolor(P1, C1),
-    colorcolor(P2, C2),
+    f:color(P1),
+    f:color(P2),
+    f:value(P1, C1),
+    f:value(P2, C2),
     C1 = C2.
 
-negatePred(Pred, NegPred) :- % double neg
-    notpred(_, Pred),
+negatePred(P, NP) :- pnp(P, NP).
+negatePred(NP, P) :- pnp(P, NP).
+
+np(Pred) :- f:neg(F), f:pred(F, Pred).
+pnp(Pred, NegPred) :-
     predsEqual(Pred, NegPred),
-    \+ notpred(_, NegPred).
+    \+ np(Pred),
+    np(NegPred).
 
-negatePred(Pred, NegPred) :-
-    \+ notpred(_, Pred),
-    notpred(_, NegPred),
-    predsEqual(Pred, NegPred).
-
-
-f:number(f6).
-f:number.entity(f6, node1)
-f:number.number(f6, 8).
-f:number(f7).
-f:number.entity(f7, node2)
-f:number.number(f7, 3).
-f:part_whole(frame1).
-f:part_whole.whole(frame1, node1).
-f:part_whole.part(frame1, node2).
-f:color(frame3).
-f:color.color(frame3, brown).
-f:color.entity(frame3, node2).
-f:part_whole(frame2).
-f:part_whole.whole(frame2, node1).
-f:part_whole.part(frame2, node3).
-f:color(frame4).
-f:color.color(frame4, brown).
-f:color.entity(frame4, node3).
-f:neg(frame5).
-f:neg.pred(frame5, frame4).
+f:quant(f6). f:entity(f6, e1). f:value(f6, 8).
+f:quant(f7). f:entity(f7, e2). f:value(f7, 3).
+f:part_whole(f1). f:whole(f1, e1). f:part(f1, e2).
+f:color(f3). f:value(f3, brown). f:entity(f3, e2).
+f:part_whole(f2). f:whole(f2, e1). f:part(f2, e3).
+f:color(f4). f:value(f4, brown). f:entity(f4, e3).
+f:neg(f5). f:pred(f5, f4).
