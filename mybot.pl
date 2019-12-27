@@ -2,44 +2,52 @@
 
 % solve an unknown FE of a Frame
 solve(FrameName, Entity) :-
-    quantifiable(FrameName), solveQuant(FrameName, Entity).
+    solveQuant(FrameName, Entity).
 
-quantifiable(f_number).
-addable(f_number).
+valuedProp(f_number).
+valuedProp(f_cost).
 
-quantifiable(f_cost).
-addable(f_cost).
-
-solveQuant(FrameName, Entity) :- % known quant
+knownVal(FrameName, Entity, Val) :-
+    valuedProp(FrameName),
     call(FrameName, F),
     f_entity(F, Entity),
-    f_value(F, Val),
-    makeVar(FrameName, Entity, Var),
-    makeEquation(eq, Var, Val).
-
-solveQuant(FrameName, Total) :- % multiplication
-    addable(FrameName),
-    makeVar(f_number, Total, Var1),
-    mean(FrameName, Total, Mean),
-    makeVar(FrameName, Mean, Var2),
-    makeVar(FrameName, Total, Prod),
-    makeEquation(product, Var1, Var2, Prod),
-    solveQuant(f_number, Total),
-    solveQuant(FrameName, Mean).
+    f_value(F, Val).
 
 solveQuant(FrameName, Part) :- % addition
-    addable(FrameName),
     partWhole(Part, Whole),
+    knownVal(FrameName, Whole, _),
     partition(Whole, Parts),
     member(Part, Parts),
     maplist(makeVar(FrameName), Parts, Vars),
     makeVar(FrameName, Whole, Var),
     makeEquation(sum, Vars, Var),
     delete(Parts, Part, PartsExcludingThis),
-    maplist(solveQuant(FrameName), PartsExcludingThis),
-    solveQuant(FrameName, Whole).
+    maplist(solveQuant(FrameName), PartsExcludingThis).
 
-mean(FrameName, Total, Mean) :-
+solveQuant(FrameName, Entity) :- % known quant
+    knownVal(FrameName, Entity, Val),
+    makeVar(FrameName, Entity, Var),
+    makeEquation(eq, Var, Val).
+
+solveQuant(FrameName, Total) :- % multiplication
+    mean(Total, Mean),
+    knownVal(FrameName, Mean, _),
+    makeVar(f_number, Total, Var1),
+    makeVar(FrameName, Mean, Var2),
+    makeVar(FrameName, Total, Prod),
+    makeEquation(product, Var1, Var2, Prod),
+    solveQuant(f_number, Total).
+
+solveQuant(f_number, Total) :-
+    mean(Total, Mean),
+    knownVal(FrameName, Mean, _),
+    makeVar(f_number, Total, Var1),
+    makeVar(FrameName, Mean, Var2),
+    makeVar(FrameName, Total, Prod),
+    makeEquation(product, Var1, Var2, Prod),
+    solveQuant(FrameName, Total).
+
+mean(Total, Mean) :-
     f_each(F),
     f_set(F, Total),
     f_one(F, Mean).
@@ -52,10 +60,25 @@ partition(Whole, Parts) :-
     negatePred(P1, P2),
     Parts = [E1, E2].
 
+mark(X) :-
+    \+ nb_current(X, _),
+    nb_setval(X, true).
+
 makeVar(FrameName, Entity, Var) :- atomic_list_concat([Entity, FrameName], '.', Var).
-makeEquation(eq, Var, Val) :- write(Var), write(' = '), writeln(Val).
-makeEquation(sum, Vars, Sum) :- atomic_list_concat(Vars, ' + ', L), write(L), write(' = '), writeln(Sum).
-makeEquation(product, Var1, Var2, Prod) :- write(Var1), write('*'), write(Var2), write(' = '), writeln(Prod).
+makeEquation(eq, Var, Val) :-
+    atomic_list_concat([Var, ' = ', Val], S),
+    mark(S),
+    writeln(S).
+makeEquation(sum, Vars, Sum) :-
+    sort(Vars, Sorted),
+    atomic_list_concat(Sorted, ' + ', S1),
+    atomic_list_concat([S1, ' = ', Sum], S),
+    mark(S),
+    writeln(S).
+makeEquation(product, Var1, Var2, Prod) :-
+    atomic_list_concat([Var1, '*', Var2, ' = ', Prod], S),
+    mark(S),
+    writeln(S).
 
 partWhole(Part, Whole) :-
     f_part_whole(F),
@@ -98,10 +121,10 @@ f_part_whole(f12). f_whole(f12, e4). f_part(f12, e6).
 f_banana(f13). f_entity(f13, e6).
 
 f_each(f15). f_one(f15, e7). f_set(f15, e5).
-f_number(f18). f_entity(f18, e7). f_value(f18, 1).
+% f_number(f18). f_entity(f18, e7). f_value(f18, 1).
 f_cost(f14). f_entity(f14, e7). f_value(f14, 10).
 
 f_each(f17). f_one(f17, e8). f_set(f17, e6).
-f_number(f19). f_entity(f19, e8). f_value(f19, 1).
+% f_number(f19). f_entity(f19, e8). f_value(f19, 1).
 f_cost(f16). f_entity(f16, e8). f_value(f16, 8).
 partition(e4, [e5, e6]).
