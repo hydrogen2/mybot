@@ -1,5 +1,16 @@
 % for now assume all answers are number type
 
+solve(Ans) :-
+    solveValue(Value),
+    choice(Ans, Value).
+
+solveValue(Value) :-
+    equation(Eq),
+    question(Q),
+    atomic_list_concat([Q, '-', chi], EqQ),
+    atomic_list_concat([Eq, EqQ], ' ', Eqs),
+    w_nonlinsolve(Eqs, chi, Value).
+
 % solve an unknown FE of a Frame
 solve(FrameName, Entity) :-
     solveQuant(FrameName, Entity).
@@ -104,27 +115,3 @@ pnp(Pred, NegPred) :-
     predsEqual(Pred, NegPred),
     \+ np(Pred),
     np(NegPred).
-
-f_number(f6). f_entity(f6, e1). f_value(f6, 8).
-f_number(f7). f_entity(f7, e2). f_value(f7, 3).
-f_part_whole(f1). f_whole(f1, e1). f_part(f1, e2).
-f_color(f3). f_value(f3, brown). f_entity(f3, e2).
-f_part_whole(f2). f_whole(f2, e1). f_part(f2, e3).
-f_color(f4). f_value(f4, brown). f_entity(f4, e3).
-f_neg(f5). f_pred(f5, f4).
-
-f_number(f8). f_entity(f8, e4). f_value(f8, 20).
-f_cost(f9). f_entity(f9, e4). f_value(f9, 180).
-f_part_whole(f10). f_whole(f10, e4). f_part(f10, e5).
-f_apple(f11). f_entity(f11, e5).
-f_part_whole(f12). f_whole(f12, e4). f_part(f12, e6).
-f_banana(f13). f_entity(f13, e6).
-
-f_each(f15). f_one(f15, e7). f_set(f15, e5).
-% f_number(f18). f_entity(f18, e7). f_value(f18, 1).
-f_cost(f14). f_entity(f14, e7). f_value(f14, 10).
-
-f_each(f17). f_one(f17, e8). f_set(f17, e6).
-% f_number(f19). f_entity(f19, e8). f_value(f19, 1).
-f_cost(f16). f_entity(f16, e8). f_value(f16, 8).
-partition(e4, [e5, e6]).
