@@ -1,5 +1,8 @@
 % for now assume all answers are number type
 
+:- dynamic partition/2.
+:- dynamic equation/1.
+
 solve(Ans) :-
     solveValue(Value),
     choice(Ans, Value).
@@ -8,12 +11,16 @@ solveValue(Value) :-
     equation(Eq),
     question(Q),
     atomic_list_concat([Q, '-', chi], EqQ),
-    atomic_list_concat([Eq, EqQ], ' ', Eqs),
+    atomic_list_concat([Eq, EqQ], ',', Eqs),
     w_nonlinsolve(Eqs, chi, Value).
 
 % solve an unknown FE of a Frame
-solve(FrameName, Entity) :-
-    solveQuant(FrameName, Entity).
+solve(FrameName, Entity, Value) :-
+    solveQuant(FrameName, Entity),
+    findall(X, equation(X), L),
+    atomic_list_concat(L, ',', Eqs),
+    makeVar(FrameName, Entity, Var),
+    w_nonlinsolve(Eqs, Var, Value).
 
 valuedProp(f_number).
 valuedProp(f_cost).
@@ -24,9 +31,14 @@ knownVal(FrameName, Entity, Val) :-
     f_entity(F, Entity),
     f_value(F, Val).
 
+solveQuant(FrameName, Entity) :- % known quant
+    knownVal(FrameName, Entity, Val),
+    makeVar(FrameName, Entity, Var),
+    makeEquation(eq, Var, Val).
+
 solveQuant(FrameName, Part) :- % addition
     partWhole(Part, Whole),
-    knownVal(FrameName, Whole, _),
+    solveQuant(FrameName, Whole),
     partition(Whole, Parts),
     member(Part, Parts),
     maplist(makeVar(FrameName), Parts, Vars),
@@ -35,28 +47,14 @@ solveQuant(FrameName, Part) :- % addition
     delete(Parts, Part, PartsExcludingThis),
     maplist(solveQuant(FrameName), PartsExcludingThis).
 
-solveQuant(FrameName, Entity) :- % known quant
-    knownVal(FrameName, Entity, Val),
-    makeVar(FrameName, Entity, Var),
-    makeEquation(eq, Var, Val).
-
 solveQuant(FrameName, Total) :- % multiplication
     mean(Total, Mean),
-    knownVal(FrameName, Mean, _),
+    solveQuant(FrameName, Mean),
     makeVar(f_number, Total, Var1),
     makeVar(FrameName, Mean, Var2),
     makeVar(FrameName, Total, Prod),
     makeEquation(product, Var1, Var2, Prod),
     solveQuant(f_number, Total).
-
-solveQuant(f_number, Total) :-
-    mean(Total, Mean),
-    knownVal(FrameName, Mean, _),
-    makeVar(f_number, Total, Var1),
-    makeVar(FrameName, Mean, Var2),
-    makeVar(FrameName, Total, Prod),
-    makeEquation(product, Var1, Var2, Prod),
-    solveQuant(FrameName, Total).
 
 mean(Total, Mean) :-
     f_each(F),
@@ -72,24 +70,24 @@ partition(Whole, Parts) :-
     Parts = [E1, E2].
 
 mark(X) :-
-    \+ nb_current(X, _),
-    nb_setval(X, true).
+    \+ equation(X),
+    assertz(equation(X)).
 
-makeVar(FrameName, Entity, Var) :- atomic_list_concat([Entity, FrameName], '.', Var).
+makeVar(FrameName, Entity, Var) :- atomic_list_concat([Entity, FrameName], '_', Var).
 makeEquation(eq, Var, Val) :-
-    atomic_list_concat([Var, ' = ', Val], S),
-    mark(S),
-    writeln(S).
+    atomic_list_concat([Var, ' - ', Val], S),
+    writeln(S),
+    mark(S).
 makeEquation(sum, Vars, Sum) :-
     sort(Vars, Sorted),
     atomic_list_concat(Sorted, ' + ', S1),
-    atomic_list_concat([S1, ' = ', Sum], S),
-    mark(S),
-    writeln(S).
+    atomic_list_concat([S1, ' - ', Sum], S),
+    writeln(S),
+    mark(S).
 makeEquation(product, Var1, Var2, Prod) :-
-    atomic_list_concat([Var1, '*', Var2, ' = ', Prod], S),
-    mark(S),
-    writeln(S).
+    atomic_list_concat([Var1, '*', Var2, ' - ', Prod], S),
+    writeln(S),
+    mark(S).
 
 partWhole(Part, Whole) :-
     f_part_whole(F),

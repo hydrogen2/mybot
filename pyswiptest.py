@@ -10,10 +10,13 @@ from sympy.solvers.solveset import nonlinsolve
 from sympy.parsing.sympy_parser import (parse_expr, standard_transformations, implicit_multiplication)
 
 pyswip.easy.PL_unify_atom_chars = pyswip.core._lib.PL_unify_atom_chars
-transformations = standard_transformations + (implicit_multiplication,)
 
 def w_nonlinsolve(*a):
-    eqs = [parse_expr(s, transformations=transformations) for s in str(a[0]).split()]
+    a0 = str(a[0])
+    xforms = standard_transformations
+    if '_' not in a0: # for now we use _ to tell between internal and external exprs
+        xforms += implicit_multiplication
+    eqs = [parse_expr(s, transformations=xforms) for s in a0.split(',')]
     x = Symbol(str(a[1])) # target
     xs = set()
     for eq in eqs:
@@ -89,5 +92,6 @@ prolog.assertz("f_entity(f16, e8)")
 prolog.assertz("f_value(f16, 8)")
 prolog.assertz("partition(e4, [e5, e6])")
 
-print(list(prolog.query('solveQuant(f_number, e5)', catcherrors=False)))
+# print(list(prolog.query("assertz(equation(a)), assertz(equation(a)), setof(X, equation(X), L)", catcherrors=False)))
+print(list(prolog.query("solve(f_number, e5, X)", catcherrors=False)))
 # print(list(prolog.query('solve(Ans)', catcherrors=False)))
