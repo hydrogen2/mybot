@@ -36,6 +36,11 @@ solveQuant(FrameName, Entity) :- % known quant
     makeVar(FrameName, Entity, Var),
     makeEquation(eq, Var, Val).
 
+solveQuant(FrameName, Entity) :- % known var
+    makeVar(FrameName, Entity, Var),
+    equation(Eq),
+    sub_atom(Eq, _, _, _, Var).
+
 solveQuant(FrameName, Part) :- % addition
     partWhole(Part, Whole),
     solveQuant(FrameName, Whole),
@@ -55,6 +60,16 @@ solveQuant(FrameName, Total) :- % multiplication
     makeVar(FrameName, Total, Prod),
     makeEquation(product, Var1, Var2, Prod),
     solveQuant(f_number, Total).
+
+solveQuant(f_number, Total) :-
+    mean(Total, Mean),
+    knownVal(FrameName, Mean, _),
+    solveQuant(FrameName, Mean),
+    makeVar(f_number, Total, Var1),
+    makeVar(FrameName, Mean, Var2),
+    makeVar(FrameName, Total, Prod),
+    makeEquation(product, Var1, Var2, Prod),
+    solveQuant(FrameName, Total).
 
 mean(Total, Mean) :-
     f_each(F),

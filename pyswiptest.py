@@ -93,5 +93,7 @@ prolog.assertz("f_value(f16, 8)")
 prolog.assertz("partition(e4, [e5, e6])")
 
 # print(list(prolog.query("assertz(equation(a)), assertz(equation(a)), setof(X, equation(X), L)", catcherrors=False)))
-print(list(prolog.query("solve(f_number, e5, X)", catcherrors=False)))
+# print(list(prolog.query("solveQuant(f_number, e5), findall(X, equation(X), L), atomic_list_concat(L, ',', Eqs)", catcherrors=False)))
+print(list(prolog.query("solve(f_number, e6, Ans)", catcherrors=False)))
+print(list(prolog.query("solve(f_number, e3, Ans)", catcherrors=False)))
 # print(list(prolog.query('solve(Ans)', catcherrors=False)))
