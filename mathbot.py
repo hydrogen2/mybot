@@ -29,7 +29,7 @@ except ImportError:
 os.environ['STANFORD_MODELS'] = 'libs/stanford-postagger-2018-10-16/models'
 
 tagger = StanfordPOSTagger('english-bidirectional-distsim.tagger', 'libs/stanford-postagger-2018-10-16/stanford-postagger.jar')
-parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.2', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
+parser = MaltParser(os.path.dirname(os.path.abspath(__file__))+'/libs/maltparser-1.9.1', 'libs/engmalt.linear-1.7.mco', tagger=tagger.tag)
 stemmer = WordNetLemmatizer()
 
 def walkTree(tree):
@@ -56,6 +56,9 @@ def parse(sent):
         pp.pprint(('Parse #'+str(i), parse.tree()))
         walkTree(parse)
 
+def latex2sympy(latex):
+    return latex
+
 def process(text):
 # substitute latex
     def translateLatex(matchobj):
@@ -70,12 +73,12 @@ def answer(question):
     for sentence in sentences:
 # find question (by ? and wh-word)
         # print(sentence)
-        wh = re.match(r'(.*[,.]\s)?(what\s.*\?)', sentence)
+        wh = re.match(r'(.*[,.]\s)?(what\s.*\?)', sentence) #TODO: refine
         if wh is not None:
             ifpart = wh.group(1)
             process(ifpart)
             whpart = wh.group(2)
-            process(whpart)
+            process(whpart) # get question type
         else:
             process(sentence)
 

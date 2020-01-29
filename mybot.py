@@ -2,7 +2,7 @@
 
 import os
 from itertools import chain
-import pprint
+from pprint import PrettyPrinter
 import nltk
 from nltk.tag import StanfordPOSTagger
 from nltk.parse.malt import MaltParser
@@ -12,12 +12,17 @@ from nltk.inference.discourse import DrtGlueReadingCommand, DiscourseTester
 from nltk.corpus import wordnet as wn
 
 os.environ['DYLD_FALLBACK_LIBRARY_PATH'] = '/usr/local/Cellar/swi-prolog/8.0.2_1/libexec/lib/swipl/lib/x86_64-darwin/'
-from pyswip import Prolog
-from pyswip import Prolog, registerForeign
+import pyswip
+from pyswip import Prolog, registerForeign, Atom
+pyswip.easy.PL_unify_atom_chars = pyswip.core._lib.PL_unify_atom_chars
+
+from sympy import *
+from sympy.solvers.solveset import nonlinsolve
+from sympy.parsing.sympy_parser import (parse_expr, standard_transformations, implicit_multiplication)
 
 DEBUG = True
 # DEBUG = False
-pp = pprint.PrettyPrinter(indent=4)
+pp = PrettyPrinter(indent=4)
 
 test1 = [
     'Tim has 8 hamsters.'
@@ -136,59 +141,27 @@ frames = {
     }
 }
 
-def op_findFrame(frame, params):
-    node, f, this, that, ret = frame.get(params[0]), params[1], params[2], params[3], params[4]
-    fs = node.get(f+':'+this)
-    if fs is None:
-        return False
-    frame[ret] = fs[0][that]
+def w_nonlinsolve(*a):
+    a0 = str(a[0])
+    xforms = standard_transformations
+    if '_' not in a0: # for now we use _ to tell between internal and external exprs
+        xforms += implicit_multiplication
+    eqs = [parse_expr(s, transformations=xforms) for s in a0.split(',')]
+    x = Symbol(str(a[1])) # target
+    xs = set()
+    for eq in eqs:
+        xs.update(eq.free_symbols)
+    xs = list(xs)
+    xi = xs.index(x)
+    sols = nonlinsolve(eqs, xs)
+    sol = sols.args[0]
+    a[2].value = str(sol[xi])
     return True
-
-def op_get(frame, params):
-    node, attr, ret = frame.get(params[0]), frame.get(params[1]), params[2]
-    value = node.get(attr)
-    if value is None:
-        return False
-    frame[ret] = value
-    return True
-
-def op_makeVar(frame, params):
-    frame[params[2]] = params[2]
-    return True
-
-def op_resolveVar(frame, params):
-    return False
-
-def op_makeEquation(frame, params):
-    tmpls = {
-        'eq' : '{} = {}',
-        'sum': '{} + {} = {}'
-    }
-    eq = frame[params[0]]
-    vars = [frame[p] for p in params[1:]]
-    print tmpls[eq].format(*vars)
-    return True
-
-def op_eq(frame, params):
-    return True
-
-def op_enumNodePred(frame, params):
-    frame[params[1]] = 'pred'
-    return True
-
-def op_negate(frame, params):
-    frame[params[1]] = 'neg'
-    return True
-
-def op_getPart(frame, params):
-    node, pred, ret = frame.get(params[0]), frame.get(params[1]), params[2]
-    frame[ret] = node.get('parts')[0]
-    return True
+    
+registerForeign(w_nonlinsolve, arity=3)
 
 prolog = Prolog()
 prolog.consult('mybot.pl')
-
-registerForeign()
 
 model = {
     'nodes': {}
@@ -379,7 +352,7 @@ def demo(test):
     # install the hack
     def parseFunc(parser, sents):
         def fixDGForTest2_0(dg):
-            pprint.pprint(dg.tree())
+            pp.pprint(dg.tree())
             buy = dg.get_by_address(5)
             pears = dg.get_by_address(10)
             total = dg.get_by_address(7)
@@ -430,7 +403,6 @@ def demo(test):
         # validate sent
         
         # transform to model
-
         if sent.endswith('?'):
             # run query
             x = findX(sentNo, parse, model)
