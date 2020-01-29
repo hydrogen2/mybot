@@ -2,6 +2,7 @@
 
 :- dynamic partition/2.
 :- dynamic equation/1.
+:- dynamic f_each/1.
 
 solve(Ans) :-
     solveValue(Value),

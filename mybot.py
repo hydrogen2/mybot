@@ -60,7 +60,7 @@ stemmer = WordNetLemmatizer()
 def wsd_of(tree, node):
     head, pobj = getLink(tree, node, 'head'), getLink(tree, node, 'dep:pobj')
     if head['tag'] == 'CD' or head['word'] == 'many': # 3 of them
-        return 'Be_subset_of'
+        return 'f_part_whole'
     elif pobj['tag'] == 'CD': # a total of 20
         return 'Scale_value'
     else:
@@ -68,15 +68,15 @@ def wsd_of(tree, node):
 
 frames = {
     'has': {
-        'Possession': {
-            'Owner': 'dep:nsubj',
-            'Possession': 'dep:dobj'
+        'f_possession': {
+            'f_owner': 'dep:nsubj',
+            'f_owned': 'dep:dobj'
         }
     },
     'of': {
-        'Be_subset_of': { # expressing the relationship between a part and a whole.
-            'Part': 'head', #TODO: conditional: tag == CD
-            'Total': 'dep:pobj'
+        'f_part_whole': { # expressing the relationship between a part and a whole.
+            'f_part': 'head', #TODO: conditional: tag == CD
+            'f_whole': 'dep:pobj'
         }
         , 'Scale_value': { # expressing the relationship between a scale or measure and a value.
             'Scale': 'head',
@@ -88,14 +88,14 @@ frames = {
         }
     },
     'brown': {
-        'Color': { #TODO: conditional: tag == JJ && cop
-            'Color': 'self',
-            'Entity': 'dep:nsubj'
+        'f_color': { #TODO: conditional: tag == JJ && cop
+            'f_value': 'self',
+            'f_entity': 'dep:nsubj'
         }
     },
     'not': {
-        'Not': {
-            'Pred': 'head'
+        'f_neg': {
+            'f_pred': 'head'
         }
     },
     'spent': {
@@ -176,11 +176,11 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
 
     def findOwner(cnode, poss):
         try:
-            frames = cnode['Possession:Possession']
+            frames = cnode['f_possession:f_owned']
         except:
             return None
         # todo: find the owner that agrees with poss
-        return frames[0]['Owner']
+        return frames[0]['f_owner']
 
     def compareNumbers(number1, number2):
         # todo: refine
@@ -197,7 +197,6 @@ def findCNode(model, sent, noun=None, number=None, poss=None):
             if number is not None and compareNumbers(cnode.get('number'), number):
                 # pp.pprint(cnode)
                 return cnode
-
     return None
 
 def getLink(tree, node, link):
@@ -259,21 +258,29 @@ def walkTree(sentenceNo, tree, model):
         # look up word and infer props
         cnode = None
         address, word, tag, rel = node['address'], node['word'], node['tag'], node['rel']
-        if tag in ('NN', 'NNS', 'NNP', 'NNPS', 'PRP'):
+        if tag in ('NN', 'NNS', 'NNP', 'NNPS', 'PRP') or rel in ('nsubj', 'dobj', 'pobj'): # for non nouns like 3 or many in the subj position
+            # Entities
             # check if it's an existing ref
             cnode = resolveRef(node)
             if cnode is None:
                 if tag == 'PRP':
                     raise Exception('Failed to resolve word: ' + word)
                 else:
-                    cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                        'word': word, 'number': inferNumber(node)}
-        elif rel in ('nsubj', 'dobj', 'pobj'): # for non nouns like 3 or many in the subj position
-            cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                'word': word, 'number': inferNumber(node)}
+                    number = inferNumber(node)
+                    cnode = {'sentenceNo': sentenceNo, 'wordNo': address, 'word': word, 'number': number}
+                    try:
+                        number = int(number)
+                        if number > 1:
+                            frameAtom = 'f_%d_%d' % (cnode['sentenceNo'], cnode['wordNo'])
+                            entityAtom = 'e_%d_%d' % (cnode['sentenceNo'], cnode['wordNo'])
+                            prolog.assertz('f_number(%s)' % (frameAtom,))
+                            prolog.assertz('f_entity(%s, %s)' % (frameAtom, entityAtom))
+                            prolog.assertz('f_value(%s, %d)' % (frameAtom, number))
+                    except:
+                        pass
         elif word in frames: # for verbs and predicates
-            cnode = {#'sentenceNo': sentenceNo, 'wordNo': address,
-                'word': word}
+            # Frames
+            cnode = {'sentenceNo': sentenceNo, 'wordNo': address, 'word': word}
         
         if cnode is not None:
             if sentenceNo not in model['nodes']:
@@ -291,14 +298,26 @@ def walkTree(sentenceNo, tree, model):
                 frame, roles = frames[word].iteritems().next()
             frameCNode = getCNode(model, sentenceNo, address)
             
+            frameCNode['frame'] = frame
+            frameAtom = 'f_%d_%d' % (frameCNode['sentenceNo'], frameCNode['wordNo'])
+            prolog.assertz('%s(%s)' % (frame, frameAtom))
+
             for roleName, roleExpr in roles.iteritems():
                 # TODO: parse and evaluate roleExpr
                 roleNode = getLink(tree, node, roleExpr)
                 roleCNode = getCNode(model, sentenceNo, roleNode['address'])
                 
-                frameCNode['frame'] = frame
                 frameCNode[roleName] = roleCNode
-
+                roleAtom = 'e_%d_%d' % (roleCNode['sentenceNo'], roleCNode['wordNo'])
+                if roleName == 'f_value':
+                    # write a link from entity to frame for later find
+                    prolog.assertz('entity_frame(%s, %s)' % (roleAtom, frameAtom))
+                    roleAtom = roleCNode['word'] # resolve f_value to literal
+                elif roleName == 'f_pred':
+                    # translate entity to frame
+                    roleAtom = list(prolog.query('entity_frame(%s, Frame)' % roleAtom))[0]['Frame']
+                prolog.assertz('%s(%s, %s)' % (roleName, frameAtom, roleAtom))
+                
                 frameRole = frame+':'+roleName
                 if frameRole not in roleCNode:
                     roleCNode[frameRole] = []
@@ -390,14 +409,14 @@ def demo(test):
         parses = parseFunc(parser, sents).next()
         parses = list(parses)
         parse = parses[0]
-        if DEBUG:
-            pp.pprint((len(parses), 'parses'))
-            pp.pprint(parse.tree())
+        # if DEBUG:
+        #     pp.pprint((len(parses), 'parses'))
+        #     pp.pprint(parse.tree())
         
         # walk the tree
         walkTree(sentNo, parse, model)
-        if DEBUG:
-            pp.pprint(getCNode(model, 0, 1))
+        # if DEBUG:
+        #     pp.pprint(getCNode(model, 0, 1))
 
         # ask clarifying questions
         # validate sent
@@ -408,7 +427,10 @@ def demo(test):
             x = findX(sentNo, parse, model)
             if DEBUG:
                 pp.pprint(x)
-            pp.pprint(list(prolog.query('Node=%s, Attr=%s, solve(Node, Attr)' % x)))
+            cnode = x[0]
+            entityAtom = 'e_%d_%d' % (cnode['sentenceNo'], cnode['wordNo'])
+            list(prolog.query("current_atom(P), atom_prefix(P, 'f_'), current_predicate(P, _), listing(P)"))
+            pp.pprint(list(prolog.query('solve(f_number, %s, Ans)' % entityAtom)))
         else:
             # update kb
             pass
