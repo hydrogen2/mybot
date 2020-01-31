@@ -5,7 +5,7 @@ import re
 import sys
 import os
 from itertools import chain
-import pprint
+from pprint import PrettyPrinter
 import nltk
 from nltk.tag import StanfordPOSTagger
 from nltk.parse.malt import MaltParser
@@ -13,10 +13,13 @@ from nltk.parse.dependencygraph import DependencyGraph
 from nltk.stem import WordNetLemmatizer
 from nltk.inference.discourse import DrtGlueReadingCommand, DiscourseTester
 from nltk.corpus import wordnet as wn
+from sympy.parsing.sympy_parser import (parse_expr, standard_transformations, implicit_multiplication)
+from sympy.parsing.latex import parse_latex
+from sympy import Rel
 
-DEBUG = True
-# DEBUG = False
-pp = pprint.PrettyPrinter(indent=4)
+# DEBUG = True
+DEBUG = False
+pp = PrettyPrinter(indent=4)
 
 # hack for subprocess.DEVNULL on python 2.7
 try:
@@ -56,15 +59,52 @@ def parse(sent):
         pp.pprint(('Parse #'+str(i), parse.tree()))
         walkTree(parse)
 
-def latex2sympy(latex):
-    return latex
-
 def process(text):
 # substitute latex
-    def translateLatex(matchobj):
-        return 'A'
-    text = re.sub(r'\\\(.+?\\\)', translateLatex, text)
-    print(text)
+    def latex2Sympy(latex):
+        def prefix(latex):
+            return latex
+        def postfix(expr):
+            if expr.is_Equality and expr.lhs.is_Function:
+                return expr.rhs
+            return expr
+        latex = prefix(latex)
+        expr = None
+        try:
+            expr = parse_latex(latex)
+        except:
+            pass
+        if expr is None:
+            print('failed to convert latex to sympy: '+latex)
+        else:
+            expr = postfix(expr)
+        return expr
+
+    def isExprPred(expr):
+        return expr.is_Relational
+    
+    def isExprNominal(expr):
+        return not isExprPred(expr)
+
+    def translateLatex(matchObj):
+        # predicates to good, bad and tall
+        # nominals to X, Y and Z
+        # note latexes after preps like by are also nominals
+        latex = matchObj.group(1)
+        expr = latex2Sympy(latex)
+        if isExprPred(expr):
+            placeholder = placeholdersForPred.next()
+        elif isExprNominal(expr):
+            placeholder = placeholdersForNominal.next()
+        else:
+            print('failed to classify expr: '+expr)
+        placeholder2Expr[placeholder] = expr
+        return placeholder
+
+    placeholdersForPred = (w for w in ['good', 'bad', 'tall', 'big'])
+    placeholdersForNominal = (w for w in ['X', 'Y', 'Z', 'U', 'V', 'W'])
+    placeholder2Expr = {}
+    text = re.sub(r'\\\((.+?)\\\)', translateLatex, text)
 # parse it
     parse(text)
 
@@ -73,7 +113,7 @@ def answer(question):
     for sentence in sentences:
 # find question (by ? and wh-word)
         # print(sentence)
-        wh = re.match(r'(.*[,.]\s)?(what\s.*\?)', sentence) #TODO: refine
+        wh = re.match(r'(.*[,.]\s)?(wh.*\?)', sentence) #TODO: refine
         if wh is not None:
             ifpart = wh.group(1)
             process(ifpart)
@@ -87,7 +127,7 @@ def test(f):
         data = json.load(json_file)
 
     questions = [x['question'] for x in data if 'closed' in x['tags']]
-    questions = questions[:1]
+    questions = questions[:2]
     print(questions)
     # find each sentence
     for question in questions:
