@@ -1,27 +1,22 @@
-% for now assume all answers are number type
-
 :- dynamic partition/2.
-:- dynamic equation/1.
+:- dynamic premise/1.
 :- dynamic f_each/1.
-
-solve(Ans) :-
-    solveValue(Value),
-    choice(Ans, Value).
-
-solveValue(Value) :-
-    equation(Eq),
-    question(Q),
-    atomic_list_concat([Q, '-', chi], EqQ),
-    atomic_list_concat([Eq, EqQ], ',', Eqs),
-    w_nonlinsolve(Eqs, chi, Value).
+:- dynamic f_cost/1.
+:- dynamic f_color/1.
+:- dynamic f_value/2.
+:- dynamic f_part_whole/1.
+:- dynamic mean/2.
 
 % solve an unknown FE of a Frame
-solve(FrameName, Entity, Value) :-
-    solveQuant(FrameName, Entity),
-    findall(X, equation(X), L),
-    atomic_list_concat(L, ',', Eqs),
+q_value(F, V) :-
+    valuedProp(FrameName),
+    call(FrameName, F),
+    f_entity(F, Entity),
     makeVar(FrameName, Entity, Var),
-    w_nonlinsolve(Eqs, Var, Value).
+    solveQuant(FrameName, Entity),
+    findall(X, premise(X), L),
+    atomic_list_concat(L, ',', Eqs),
+    solve(Eqs, Var, V).
 
 valuedProp(f_number).
 valuedProp(f_cost).
@@ -32,15 +27,22 @@ knownVal(FrameName, Entity, Val) :-
     f_entity(F, Entity),
     f_value(F, Val).
 
-solveQuant(FrameName, Entity) :- % known quant
+solveQuant(FrameName, Entity) :- % known value
     knownVal(FrameName, Entity, Val),
     makeVar(FrameName, Entity, Var),
     makeEquation(eq, Var, Val).
 
 solveQuant(FrameName, Entity) :- % known var
     makeVar(FrameName, Entity, Var),
-    equation(Eq),
+    premise(Eq),
     sub_atom(Eq, _, _, _, Var).
+
+solveQuant(FrameName, Whole) :- % addition
+    partition(Whole, Parts),
+    maplist(makeVar(FrameName), Parts, Vars),
+    makeVar(FrameName, Whole, Var),
+    makeEquation(sum, Vars, Var),
+    maplist(solveQuant(FrameName), Parts).
 
 solveQuant(FrameName, Part) :- % addition
     partWhole(Part, Whole),
@@ -86,8 +88,8 @@ partition(Whole, Parts) :-
     Parts = [E1, E2].
 
 mark(X) :-
-    \+ equation(X),
-    assertz(equation(X)).
+    \+ premise(X),
+    assertz(premise(X)).
 
 makeVar(FrameName, Entity, Var) :- atomic_list_concat([Entity, FrameName], '_', Var).
 makeEquation(eq, Var, Val) :-

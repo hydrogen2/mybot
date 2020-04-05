@@ -11,35 +11,74 @@ from sympy.parsing.sympy_parser import (parse_expr, standard_transformations, im
 
 pyswip.easy.PL_unify_atom_chars = pyswip.core._lib.PL_unify_atom_chars
 
-def w_nonlinsolve(*a):
-    a0 = str(a[0])
-    xforms = standard_transformations
-    if '_' not in a0: # for now we use _ to tell between internal and external exprs
-        xforms += implicit_multiplication
-    eqs = [parse_expr(s, transformations=xforms) for s in a0.split(',')]
-    x = Symbol(str(a[1])) # target
+def solve(*a):
+    eqs = [parse_expr(s) for s in str(a[0]).split(',')]
+    target = parse_expr(str(a[1])+'-chi')
+    eqs.append(target)
     xs = set()
     for eq in eqs:
         xs.update(eq.free_symbols)
     xs = list(xs)
-    xi = xs.index(x)
+    xi = xs.index(Symbol('chi'))
     sols = nonlinsolve(eqs, xs)
     sol = sols.args[0]
     a[2].value = str(sol[xi])
     return True
     
-registerForeign(w_nonlinsolve, arity=3)
+registerForeign(solve, arity=3)
 
 prolog = Prolog()
 prolog.consult('mybot.pl')
 
-# prolog.assertz("equation('3(a+2b)-(27)')")
-# prolog.assertz("question('5a+10b')")
+prolog.assertz("premise('3*(a + 2*b)-27')")
+prolog.assertz("f_number(f0)")
+prolog.assertz("f_entity(f0, e0)")
+prolog.assertz("f_value(f0, '(5*a + 10*b)')")
 # prolog.assertz("choice('A', '18')")
 # prolog.assertz("choice('B', '35')")
 # prolog.assertz("choice('C', '45')")
 # prolog.assertz("choice('D', '60')")
 # prolog.assertz("choice('E', '72')")
+print(list(prolog.query("q_value(f0, X)")))
+
+prolog.assertz("f_part_whole(f20)")
+prolog.assertz("f_whole(f20, e20)")
+prolog.assertz("f_part(f20, e21)")
+prolog.assertz("f_cost(f23)")
+prolog.assertz("f_entity(f23, e21)")
+prolog.assertz("f_value(f23, 'x')")
+
+prolog.assertz("f_part_whole(f21)")
+prolog.assertz("f_whole(f21, e20)")
+prolog.assertz("f_part(f21, e22)")
+prolog.assertz("f_cost(f24)")
+prolog.assertz("f_entity(f24, e22)")
+prolog.assertz("f_value(f24, '(x+1)')")
+
+prolog.assertz("f_part_whole(f22)")
+prolog.assertz("f_whole(f22, e20)")
+prolog.assertz("f_part(f22, e23)")
+prolog.assertz("f_cost(f25)")
+prolog.assertz("f_entity(f25, e23)")
+prolog.assertz("f_value(f25, 10)")
+
+prolog.assertz("f_cost(f27)")
+prolog.assertz("f_entity(f27, e25)")
+prolog.assertz("f_value(f27, 7)")
+
+prolog.assertz("f_number(f28)")
+prolog.assertz("f_entity(f28, e20)")
+prolog.assertz("f_value(f28, 3)")
+
+prolog.assertz("mean(e20, e25)")
+prolog.assertz("partition(e20, [e21, e22, e23])")
+
+prolog.assertz("f_cost(f26)")
+prolog.assertz("f_entity(f26, e24)")
+prolog.assertz("f_value(f26, '(x-1)')")
+print(list(prolog.query("solveQuant(f_cost, e21)")))
+print(list(prolog.query("q_value(f26, X)")))
+
 
 prolog.assertz("f_number(f6)")
 prolog.assertz("f_entity(f6, e1)")
@@ -61,6 +100,10 @@ prolog.assertz("f_value(f4, brown)")
 prolog.assertz("f_entity(f4, e3)")
 prolog.assertz("f_neg(f5)")
 prolog.assertz("f_pred(f5, f4)")
+
+prolog.assertz("f_number(f18)")
+prolog.assertz("f_entity(f18, e3)")
+print(list(prolog.query("q_value(f18, X)")))
 
 prolog.assertz("f_number(f8)")
 prolog.assertz("f_entity(f8, e4)")
@@ -92,10 +135,6 @@ prolog.assertz("f_entity(f16, e8)")
 prolog.assertz("f_value(f16, 8)")
 prolog.assertz("partition(e4, [e5, e6])")
 
-# print(list(prolog.query("assertz(equation(a)), assertz(equation(a)), setof(X, equation(X), L)", catcherrors=False)))
-# print(list(prolog.query("solveQuant(f_number, e5), findall(X, equation(X), L), atomic_list_concat(L, ',', Eqs)", catcherrors=False)))
-list(prolog.query("current_atom(P), atom_prefix(P, 'f_'), current_predicate(P, _), listing(P)"))
-print(list(prolog.query("current_atom(P), atom_prefix(P, 'f_'), current_predicate(P, _), listing(P)")))
-# print(list(prolog.query("solve(f_number, e6, Ans)", catcherrors=False)))
-# print(list(prolog.query("solve(f_number, e3, Ans)", catcherrors=False)))
-# print(list(prolog.query('solve(Ans)', catcherrors=False)))
+prolog.assertz("f_cost(f19)")
+prolog.assertz("f_entity(f19, e6)")
+print(list(prolog.query("q_value(f19, X)")))
