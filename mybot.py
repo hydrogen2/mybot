@@ -8,7 +8,6 @@ from nltk.tag import StanfordPOSTagger
 from nltk.parse.malt import MaltParser
 from nltk.parse.dependencygraph import DependencyGraph
 from nltk.stem import WordNetLemmatizer
-from nltk.inference.discourse import DrtGlueReadingCommand, DiscourseTester
 from nltk.corpus import wordnet as wn
 
 os.environ['DYLD_FALLBACK_LIBRARY_PATH'] = '/usr/local/Cellar/swi-prolog/8.0.2_1/libexec/lib/swipl/lib/x86_64-darwin/'
