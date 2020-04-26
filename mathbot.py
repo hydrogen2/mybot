@@ -43,24 +43,16 @@ def walkTree(tree, f):
                 walkTreeRecursive(dep)
     walkTreeRecursive(0)
 
-def parse(sent, placeholder2Expr):
-    def translateBack(node):
-        if node['word'] in placeholder2Expr:
-            node['word'] = placeholder2Expr[node['word']]
-
-    pp.pprint(sent)
-    sents = [sent]
-    sents = map(lambda s: nltk.word_tokenize(s), sents)
-    # sents = map(lambda s: filter(lambda w: w.isalnum(), s), sents)
-    parses = parser.parse_sents(sents).next()
-    parses = list(parses)
+def parse(words, translateBack):
+    pp.pprint(words)
+    parses = list(parser.parse_sents([words]).next())
     pp.pprint((len(parses), 'parses'))
     for i, parse in enumerate(parses):
         walkTree(parse, translateBack)
         pp.pprint(('Parse #'+str(i), parse.tree()))
-        walkTree(parse, )
+        # walkTree(parse, )
 
-def process(text):
+def process(sent):
 # substitute latex
     def latex2Sympy(latex):
         def fixLatex(latex):
@@ -76,37 +68,64 @@ def process(text):
         return expr
 
     def translateLatex(matchObj):
-        latex = matchObj.group(1)
+        # translation rules:
+        # predicates like \\(a + 2b = 20\\) and \\(a \\geq 6\\) => 'it is good'
+        # nouns like \\(x\\) and \\(x + 1\\) => 'apple'
+        # Let the function f be defined by \\(f(x) = \\frac { x^2 } { 3 } + 6\\) also treated like nouns
+        latex = matchObj.group(1) or matchObj.group(2)
+        print(latex)
         expr = latex2Sympy(latex)
-        placeholder = placeholders.next()
-        placeholder2Expr[placeholder] = expr
+        if expr.is_Relational:
+            placeholder = ' relExpr '
+            relExprs.append(expr)
+        else:
+            placeholder = ' nomExpr '
+            nomExprs.append(expr)
         return placeholder
 
-    placeholders = (w for w in ['good', 'bad', 'tall', 'big'] if w not in text)
-    placeholder2Expr = {}
-    text = re.sub(r'\\\((.+?)\\\)', translateLatex, text)
-    parse(text, placeholder2Expr)
+    def translateBack(node):
+        exprAndchildWords = wordAddr2Expr.get(node['address'])
+        if exprAndchildWords is not None:
+            node['word'] = exprAndchildWords[0]
+            for childWord in exprAndchildWords[1:]:
+                for indices in node['deps'].values():
+                    try:
+                        indices.remove(childWord)
+                    except:
+                        pass
+
+    relExprs = []
+    nomExprs = []
+    sent = re.sub(r'\\\((.+?)\\\)|(\d+)', translateLatex, sent)
+    words = nltk.word_tokenize(sent)
+    newWords = []
+    wordAddr2Expr = {}
+    i = 1
+    for w in words:
+        if w == 'relExpr':
+            newWords += ['it', 'is', 'good']
+            wordAddr2Expr[i+2] = (relExprs.pop(0), i, i+1) # good should always be the root
+            i += 3
+        elif w == 'nomExpr':
+            newWords += ['apple']
+            wordAddr2Expr[i] = (nomExprs.pop(0),)
+            i += 1
+        else:
+            newWords.append(w)
+            i += 1
+    parse(newWords, translateBack)
 
 def solve(problem):
     sentences = problem.split('.')
     for sentence in sentences:
-# find problem (by ? and wh-word)
-        # print(sentence)
-        wh = re.match(r'(.*[,.]\s)?(wh.*\?)', sentence) #TODO: refine
-        if wh is not None:
-            ifpart = wh.group(1)
-            process(ifpart)
-            whpart = wh.group(2)
-            process(whpart) # get problem type
-        else:
-            process(sentence)
+        process(sentence)
 
 def test(f):
     with open(f) as json_file:
         data = json.load(json_file)
 
     problems = [x['question'] for x in data if 'closed' in x['tags']]
-    problems = problems[:2]
+    problems = problems[2:3]
     pp.pprint(('test data: ', problems))
     for problem in problems:
         solve(problem)
