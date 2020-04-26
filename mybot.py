@@ -20,8 +20,8 @@ from sympy import *
 from sympy.solvers.solveset import nonlinsolve
 from sympy.parsing.sympy_parser import (parse_expr, standard_transformations, implicit_multiplication)
 
-DEBUG = True
-# DEBUG = False
+# DEBUG = True
+DEBUG = False
 pp = PrettyPrinter(indent=4)
 
 test1 = [
@@ -95,7 +95,25 @@ frames = {
     },
     'not': {
         'f_neg': {
-            'f_pred': 'head'
+            'f_frame': 'head'
+        }
+    },
+    # '?': {
+    #     'f_question': {
+    #         #TODO: head for general questions, WHX for special questions. If no WHX or f_question already, 
+    #         'f_frame': 'head'
+    #     }
+    # },
+    'many': {
+        'f_number': {
+            'f_entity': 'self'
+            # , 'f_value': 'many'
+        }
+    },
+    'How': {
+        'f_question': {
+            'f_frame': 'head'
+            # , 'f_frameElement': 'f_value'
         }
     },
     'spent': {
@@ -141,24 +159,21 @@ frames = {
     }
 }
 
-def w_nonlinsolve(*a):
-    a0 = str(a[0])
-    xforms = standard_transformations
-    if '_' not in a0: # for now we use _ to tell between internal and external exprs
-        xforms += implicit_multiplication
-    eqs = [parse_expr(s, transformations=xforms) for s in a0.split(',')]
-    x = Symbol(str(a[1])) # target
+def solve(*a):
+    eqs = [parse_expr(s) for s in str(a[0]).split(',')]
+    target = parse_expr(str(a[1])+'-chi')
+    eqs.append(target)
     xs = set()
     for eq in eqs:
         xs.update(eq.free_symbols)
     xs = list(xs)
-    xi = xs.index(x)
+    xi = xs.index(Symbol('chi'))
     sols = nonlinsolve(eqs, xs)
     sol = sols.args[0]
     a[2].value = str(sol[xi])
     return True
     
-registerForeign(w_nonlinsolve, arity=3)
+registerForeign(solve, arity=3)
 
 prolog = Prolog()
 prolog.consult('mybot.pl')
@@ -281,7 +296,7 @@ def walkTree(sentenceNo, tree, model):
         elif word in frames: # for verbs and predicates
             # Frames
             cnode = {'sentenceNo': sentenceNo, 'wordNo': address, 'word': word}
-        
+
         if cnode is not None:
             if sentenceNo not in model['nodes']:
                 model['nodes'][sentenceNo] = {}
@@ -308,14 +323,13 @@ def walkTree(sentenceNo, tree, model):
                 roleCNode = getCNode(model, sentenceNo, roleNode['address'])
                 
                 frameCNode[roleName] = roleCNode
-                roleAtom = 'e_%d_%d' % (roleCNode['sentenceNo'], roleCNode['wordNo'])
+                # TODO: refactor this if else into the roleExprs
                 if roleName == 'f_value':
-                    # write a link from entity to frame for later find
-                    prolog.assertz('entity_frame(%s, %s)' % (roleAtom, frameAtom))
                     roleAtom = roleCNode['word'] # resolve f_value to literal
-                elif roleName == 'f_pred':
-                    # translate entity to frame
-                    roleAtom = list(prolog.query('entity_frame(%s, Frame)' % roleAtom))[0]['Frame']
+                elif roleName == 'f_frame':
+                    roleAtom = 'f_%d_%d' % (roleCNode['sentenceNo'], roleCNode['wordNo'])
+                else:
+                    roleAtom = 'e_%d_%d' % (roleCNode['sentenceNo'], roleCNode['wordNo'])
                 prolog.assertz('%s(%s, %s)' % (roleName, frameAtom, roleAtom))
                 
                 frameRole = frame+':'+roleName
@@ -335,37 +349,6 @@ def walkTree(sentenceNo, tree, model):
         
     walkTreeRecursive(0, createCNode)
     walkTreeRecursive(0, linkCNodes)
-
-def findX(sentenceNo, tree, model):
-    cnode, attr = None, None
-    # for now assume interrogative is at word[0]
-    node = tree.get_by_address(1)
-    tag, word = node['tag'], node['word']
-    
-    if tag not in ('WDT', 'WP', 'WP$', 'WRB'):
-        raise Exception('Interrogative must be the first word in a query')
-
-    if word == 'How':
-        headNode = getLink(tree, node, 'head')
-        if headNode is not None:
-            headTag = headNode['tag']
-            if headTag == 'JJ':
-                headWord = headNode['word']
-                if headWord == 'many':
-                    xNode = getLink(tree, headNode, 'head')
-                    if xNode is not None and xNode['tag'].startswith('NN'): # todo: refine to isNoun()
-                        cnode, attr = getCNode(model, sentenceNo, xNode['address']), 'number'
-                    else: # assume many is already made a cnode
-                        cnode, attr = getCNode(model, sentenceNo, headNode['address']), 'number'
-                else:
-                    pass # JJs other than many 
-            elif headTag == 'VB':
-                pass
-    elif word == 'what':
-        # todo
-        pass
-    
-    return cnode, attr
 
 def demo(test):
     # install the hack
@@ -400,7 +383,7 @@ def demo(test):
     def massageSent(sent):
         sents = [sent]
         sents = map(lambda s: nltk.word_tokenize(s), sents)
-        sents = map(lambda s: filter(lambda w: w.isalnum(), s), sents)
+        # sents = map(lambda s: filter(lambda w: w.isalnum(), s), sents)
         return sents
 
     for sentNo, sent in enumerate(test):
@@ -409,9 +392,8 @@ def demo(test):
         parses = parseFunc(parser, sents).next()
         parses = list(parses)
         parse = parses[0]
-        # if DEBUG:
-        #     pp.pprint((len(parses), 'parses'))
-        #     pp.pprint(parse.tree())
+        pp.pprint((len(parses), 'parses'))
+        pp.pprint(parse.tree())
         
         # walk the tree
         walkTree(sentNo, parse, model)
@@ -420,19 +402,8 @@ def demo(test):
 
         # ask clarifying questions
         # validate sent
-        
-        # transform to model
-        if sent.endswith('?'):
-            # run query
-            x = findX(sentNo, parse, model)
-            if DEBUG:
-                pp.pprint(x)
-            cnode = x[0]
-            entityAtom = 'e_%d_%d' % (cnode['sentenceNo'], cnode['wordNo'])
-            list(prolog.query("current_atom(P), atom_prefix(P, 'f_'), current_predicate(P, _), listing(P)"))
-            pp.pprint(list(prolog.query('solve(f_number, %s, Ans)' % entityAtom)))
-        else:
-            # update kb
-            pass
+    list(prolog.query("current_atom(P), atom_prefix(P, 'f_'), current_predicate(P, _), listing(P)"))
+    prolog.assertz('f_frameElement(f_2_1, f_value)')
+    pp.pprint(list(prolog.query('f_question(Q), answer(Q, A)')))
 
 demo(test1)

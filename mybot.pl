@@ -5,7 +5,18 @@
 :- dynamic f_color/1.
 :- dynamic f_value/2.
 :- dynamic f_part_whole/1.
+:- dynamic f_expr/1.
+:- dynamic f_number/1.
+:- dynamic f_question/1.
+:- dynamic f_answer/2.
 :- dynamic mean/2.
+:- dynamic answer/2.
+
+answer(Q, A) :-
+    f_question(Q),
+    f_frame(Q, F),
+    f_frameElement(Q, f_value),
+    q_value(F, A).
 
 % solve an unknown FE of a Frame
 q_value(F, V) :-
@@ -16,9 +27,11 @@ q_value(F, V) :-
     solveQuant(FrameName, Entity),
     findall(X, premise(X), L),
     atomic_list_concat(L, ',', Eqs),
+    writeln(Eqs),
     solve(Eqs, Var, V).
 
 valuedProp(f_number).
+valuedProp(f_expr).
 valuedProp(f_cost).
 
 knownVal(FrameName, Entity, Val) :-
@@ -89,22 +102,20 @@ partition(Whole, Parts) :-
 
 mark(X) :-
     \+ premise(X),
+    writeln(X),
     assertz(premise(X)).
 
 makeVar(FrameName, Entity, Var) :- atomic_list_concat([Entity, FrameName], '_', Var).
 makeEquation(eq, Var, Val) :-
     atomic_list_concat([Var, ' - ', Val], S),
-    writeln(S),
     mark(S).
 makeEquation(sum, Vars, Sum) :-
     sort(Vars, Sorted),
     atomic_list_concat(Sorted, ' + ', S1),
     atomic_list_concat([S1, ' - ', Sum], S),
-    writeln(S),
     mark(S).
 makeEquation(product, Var1, Var2, Prod) :-
     atomic_list_concat([Var1, '*', Var2, ' - ', Prod], S),
-    writeln(S),
     mark(S).
 
 partWhole(Part, Whole) :-
@@ -126,7 +137,7 @@ predsEqual(P1, P2) :-
 negatePred(P, NP) :- pnp(P, NP).
 negatePred(NP, P) :- pnp(P, NP).
 
-np(Pred) :- f_neg(F), f_pred(F, Pred).
+np(Pred) :- f_neg(F), f_frame(F, Pred).
 pnp(Pred, NegPred) :-
     predsEqual(Pred, NegPred),
     \+ np(Pred),
